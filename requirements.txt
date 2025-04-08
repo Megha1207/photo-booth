@@ -1,0 +1,25 @@
+# Core App Dependencies
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+pymongo
+redis
+python-multipart
+passlib[bcrypt]
+bcrypt
+Pillow
+torch
+torchvision
+scikit-learn
+numpy
+opencv-python
+face-recognition
+aiofiles
+python-jose
+
+streamlit
+
+# Testing and Utilities
+pytest
+bson
