@@ -31,7 +31,6 @@ class File(BaseModel):
     file_id: str
     path: str
     file_version: int
-    file_hash: str
     owner_id: str
     embeddings_id: Optional[str]
     event_id: Optional[str]
@@ -54,7 +53,6 @@ class Chunk(BaseModel):
     chunk_id: str
     file_id: str
     chunk_index: int
-    chunk_hash: str
     chunk_data: Any
 
 
@@ -63,7 +61,6 @@ class Chunk(BaseModel):
 class Face(BaseModel):
     face_id: str
     path: str
-    file_hash: str
     owner_id: str
     embeddings_id: Optional[str]
     event_id: Optional[str]
@@ -71,7 +68,6 @@ class Face(BaseModel):
 
 class FaceMetadata(BaseModel):
     face_id: str
-    file_hash: str
     metadata: dict
 
 

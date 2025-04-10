@@ -21,7 +21,6 @@ os.makedirs(Config.LOCAL_STORAGE_PATH, exist_ok=True)
 app.mount("/files", StaticFiles(directory=Config.LOCAL_STORAGE_PATH), name="files")
 print("Mounted path:", Config.LOCAL_STORAGE_PATH)
 
-
 # CORS config
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +35,7 @@ async def startup_event():
     init_mongo()
     init_redis()
 
+# ✅ Includes all API routes
 app.include_router(api_router, prefix="/api")
 
 @app.get("/")
