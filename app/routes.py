@@ -177,13 +177,11 @@ async def delete_my_file(file_id: str, user_id: str = Depends(get_current_user_i
 def get_event_images(event_id: str):
     return {"files": file_service.get_files_by_event(event_id)}
 
-# Endpoint to fetch gallery for a specific event
-@router.get("/gallery/{event_id}")
-async def get_gallery(event_id: str):
-    try:
-        gallery_files = file_service.get_files_by_event(event_id)
-        if not gallery_files:
-            raise HTTPException(status_code=404, detail="No files found for this event.")
-        return {"event_id": event_id, "gallery": gallery_files}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching gallery: {str(e)}")
+# Endpoint to fetch gallery for a specific user
+@router.get("/user/{user_id}/gallery")
+async def get_user_gallery(user_id: str):
+    gallery_files = file_service.get_files_by_user(user_id)
+    if not gallery_files:
+        raise HTTPException(status_code=404, detail="No files found for this user.")
+    return {"files": gallery_files}
+

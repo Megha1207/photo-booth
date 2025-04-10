@@ -300,3 +300,45 @@ elif page == "Public Viewer":
                 st.info("No public files found for this event.")
         else:
             st.error(f"Failed to fetch files: {response.text}")
+# --- Gallery Page ---
+
+elif page == "Gallery" and st.session_state.token:
+    st.title("🖼️ Your Personal Gallery")
+    st.markdown("Browse all images you've uploaded across events.")
+
+    headers = get_auth_headers()  # Ensure authentication headers are set
+    if not headers:
+        st.stop()
+
+    # Fetch gallery data from the backend
+    response = requests.get(f"{API_URL}/api/user/{st.session_state.user_id}/gallery", headers=headers)
+
+    if response.status_code == 200:
+        gallery_data = response.json().get("files", [])  # Expecting 'files' in the response
+        if gallery_data:
+            st.success(f"📸 You have {len(gallery_data)} uploaded images.")
+
+            col_count = 3  # Number of columns for the layout
+            cols = st.columns(col_count)  # Create columns for layout
+            for i, file in enumerate(gallery_data):
+                col_idx = i % col_count  # Distribute images across columns
+                with cols[col_idx]:
+                    if 'image_base64' in file:
+                        # If the image is base64 encoded
+                        img_bytes = base64.b64decode(file["image_base64"])  # Decode the base64 string
+                        matched_img = Image.open(io.BytesIO(img_bytes))  # Open the image
+                        st.image(matched_img, caption=f"Image #{i+1}", use_column_width=True)  # Display the image
+                    else:
+                        # If the image is a URL or file path
+                        file_url = f"{API_URL}/api/files/{file['filename']}"  # Generate URL to fetch the file
+                        st.image(file_url, caption=f"Image #{i+1}", use_column_width=True)  # Display the image
+
+                    # Provide a download link
+                    st.markdown(
+                        f"[📥 Download]({file_url})",  # Provide a download link
+                        unsafe_allow_html=True
+                    )
+        else:
+            st.info("You haven't uploaded any files yet.")
+    else:
+        st.error(f"Failed to fetch your gallery: {response.text}")
