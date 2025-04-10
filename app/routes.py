@@ -21,53 +21,48 @@ from app.services.user_service import get_current_user_id
 
 router = APIRouter()
 
-
-# ------------------ File Upload ------------------
-
+# Endpoint for uploading files
 @router.post("/upload/file")
 async def upload_file(
     file: UploadFile = File(...),
     event_id: str = Form(...),
-    user_id: str = Form(...)
+    user_id: str = Form(...),
 ):
-    return await file_service.handle_file_upload(file, user_id, event_id)
+    try:
+        return await file_service.handle_file_upload(file, user_id, event_id)
+    except Exception as e:
+        print("🔥 Upload Failed:", str(e))
+        raise HTTPException(status_code=500, detail=f"Upload route error: {str(e)}")
 
-
-# ------------------ Face Upload ------------------
-
+# Endpoint for uploading face images
 @router.post("/upload/face")
 async def upload_face(
     face: UploadFile = File(...),
     user_id: str = Form(...),
-    event_id: str = Form(...)
+    event_id: str = Form(...),
 ):
     file_bytes = await face.read()
     filename = face.filename
 
-    # Save face and return DB face_id
     result = face_service.handle_face_upload(file_bytes, filename, user_id, event_id)
 
     if result is None:
         return {"error": "No face detected in the image."}
 
-    # Convert image bytes to base64
     base64_image = base64.b64encode(file_bytes).decode("utf-8")
 
     return {
         "face_id": str(result),
-        "base64_image": base64_image
+        "base64_image": base64_image,
     }
 
-
-# ------------------ Chunk Upload ------------------
-
+# Endpoint for uploading chunked files
 @router.post("/upload/chunked-file")
 async def upload_chunked_file(
     file: UploadFile = File(...),
     event_id: str = Form(...),
-    user_id: str = Form(...)
+    user_id: str = Form(...),
 ):
-    # Save file temporarily
     temp_path = f"/tmp/{file.filename}"
     with open(temp_path, "wb") as f:
         f.write(await file.read())
@@ -80,12 +75,10 @@ async def upload_chunked_file(
 
     return {
         "file_id": str(file_doc["_id"]),
-        "chunk_count": len(chunk_ids)
+        "chunk_count": len(chunk_ids),
     }
 
-
-# ------------------ Chunk Reconstruct ------------------
-
+# Endpoint for reconstructing files from chunks
 @router.get("/reconstruct-file/{file_id}")
 def reconstruct_file(file_id: str):
     file_doc = db.files.find_one({"_id": ObjectId(file_id)})
@@ -97,32 +90,26 @@ def reconstruct_file(file_id: str):
 
     return FileResponse(path=output_path, filename=file_doc["filename"])
 
-
-# ------------------ Face-File Matching ------------------
-
+# Endpoint for matching faces with uploaded files
 @router.post("/match-face")
 async def match_face(
     face_id: str = Form(...),
-    event_id: str = Form(...)
+    event_id: str = Form(...),
 ):
     return face_service.match_face_with_files(face_id, event_id)
 
-
-# ------------------ Search by Event ------------------
-
+# Endpoint for searching files by event
 @router.get("/search/event/{event_id}")
 async def search_by_event(event_id: str):
     return search_service.search_files_by_event(event_id)
 
-
-# ------------------ Duplicate Detection ------------------
-
+# Endpoint for finding duplicates
 @router.get("/duplicates/")
 async def find_duplicates(user_id: str = None, event_id: str = None):
     duplicates = duplicate_service.find_duplicate_files(user_id, event_id)
     return {"duplicates": duplicates}
 
-
+# Endpoint for deleting duplicate files
 @router.delete("/duplicates/")
 async def delete_duplicates(file_ids: List[str]):
     if not file_ids:
@@ -130,15 +117,13 @@ async def delete_duplicates(file_ids: List[str]):
     deleted = duplicate_service.delete_files(file_ids)
     return {"deleted_file_ids": deleted}
 
-
-# ------------------ User Registration ------------------
-
+# Endpoint for user registration
 @router.post("/register")
 def register(
     user_name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
-    device_id: str = Form(None)
+    device_id: str = Form(None),
 ):
     try:
         user_id = user_service.create_user(user_name, email, password, device_id)
@@ -146,9 +131,7 @@ def register(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
-# ------------------ User Login ------------------
-
+# Endpoint for user login
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     auth_result = user_service.authenticate_user(form_data.username, form_data.password)
@@ -161,12 +144,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "access_token": token,
         "token_type": "bearer",
         "user_name": user["user_name"],
-        "user_id": str(user["_id"])
+        "user_id": str(user["_id"]),
     }
 
-
-# ------------------ Get File by ID ------------------
-
+# Endpoint to retrieve file by ID
 @router.get("/get-file/{file_id}")
 def get_file(file_id: str):
     file_doc = db.files.find_one({"_id": ObjectId(file_id)})
@@ -174,17 +155,35 @@ def get_file(file_id: str):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path=file_doc["path"])
 
-
+# Endpoint to get files uploaded by current user
 @router.get("/my-files")
 async def get_my_files(user_id: str = Depends(get_current_user_id)):
     return file_service.get_files_by_user(user_id)
+
+# Endpoint to delete files by IDs
 @router.delete("/delete-files/")
 async def delete_files(request: Request, user_id: str = Depends(get_current_user_id)):
     body = await request.json()
     file_ids = body.get("file_ids", [])
     return file_service.delete_files_by_ids(file_ids, user_id)
 
-
+# Endpoint to delete a single file by ID
 @router.delete("/delete-file/{file_id}")
 async def delete_my_file(file_id: str, user_id: str = Depends(get_current_user_id)):
     return file_service.delete_user_file(file_id, user_id)
+
+# Endpoint to get files for a specific event
+@router.get("/event/{event_id}/files")
+def get_event_images(event_id: str):
+    return {"files": file_service.get_files_by_event(event_id)}
+
+# Endpoint to fetch gallery for a specific event
+@router.get("/gallery/{event_id}")
+async def get_gallery(event_id: str):
+    try:
+        gallery_files = file_service.get_files_by_event(event_id)
+        if not gallery_files:
+            raise HTTPException(status_code=404, detail="No files found for this event.")
+        return {"event_id": event_id, "gallery": gallery_files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching gallery: {str(e)}")
