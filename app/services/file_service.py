@@ -1,6 +1,7 @@
 import os
 import io
 import numpy as np
+import hashlib
 from PIL import Image, UnidentifiedImageError  
 from fastapi import UploadFile, HTTPException
 from bson import ObjectId
@@ -21,24 +22,128 @@ def get_next_sequence(name: str) -> int:
     )
     return counter["sequence_value"]
 
+# async def handle_file_upload(upload_file: UploadFile, user_id: str, event_id: str):
+#     try:
+#         valid_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'ico', 'svg']
+#         file_extension = os.path.splitext(upload_file.filename)[-1].lower()[1:]
+
+#         if file_extension not in valid_extensions:
+#             raise HTTPException(status_code=400, detail="Unsupported file type")
+
+#         file_bytes = await upload_file.read()
+
+#         event_folder = os.path.join(Config.LOCAL_STORAGE_PATH, f"event_{event_id}")
+#         os.makedirs(event_folder, exist_ok=True)
+
+#         filename = f"{ObjectId()}_{upload_file.filename}"
+#         local_path = os.path.join(event_folder, filename)
+#         with open(local_path, "wb") as f:
+#             f.write(file_bytes)
+
+#         chunks = chunk_image_bytes(file_bytes)
+#         chunk_ids = []
+#         for index, chunk_data in enumerate(chunks):
+#             chunk_id = ObjectId()
+#             db.chunks.insert_one({
+#                 "_id": chunk_id,
+#                 "file_id": None,
+#                 "chunk_index": index,
+#                 "chunk_data": chunk_data
+#             })
+#             chunk_ids.append(chunk_id)
+
+#         try:
+#             image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+#             embeddings = extract_embeddings(image)
+#         except UnidentifiedImageError:
+#             embeddings = []
+#         except Exception as e:
+#             print("[Embedding Error]:", str(e))
+#             embeddings = []
+
+#         if isinstance(embeddings, np.ndarray):
+#             embeddings = [embeddings.tolist()]
+#         elif isinstance(embeddings, list):
+#             embeddings = [e.tolist() if isinstance(e, np.ndarray) else e for e in embeddings]
+#         else:
+#             embeddings = []
+
+#         next_file_id = get_next_sequence("file_id")
+#         file_doc = {
+#             "_id": next_file_id,
+#             "filename": upload_file.filename,
+#             "path": local_path,
+#             "file_version": 1,
+#             "owner_id": ObjectId(user_id),
+#             "event_id": event_id,
+#             "embeddings_id": None
+#         }
+#         db.files.insert_one(file_doc)
+
+#         embedding_doc = {
+#             "embeddings_vector": embeddings,
+#             "file_id": next_file_id
+#         }
+#         embedding_id = db.embeddings.insert_one(embedding_doc).inserted_id
+
+#         db.files.update_one(
+#             {"_id": next_file_id},
+#             {"$set": {"embeddings_id": embedding_id}}
+#         )
+
+#         db.chunks.update_many(
+#             {"_id": {"$in": chunk_ids}},
+#             {"$set": {"file_id": next_file_id}}
+#         )
+
+#         return {
+#             "status": "success",
+#             "file_id": str(next_file_id),
+#             "filename": upload_file.filename,
+#             "path": local_path,
+#             "event_folder": event_folder,
+#             "embedding_status": "created" if embeddings else "not created"
+#         }
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+
 async def handle_file_upload(upload_file: UploadFile, user_id: str, event_id: str):
     try:
+        # Validate file type
         valid_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'ico', 'svg']
         file_extension = os.path.splitext(upload_file.filename)[-1].lower()[1:]
-
+        
         if file_extension not in valid_extensions:
             raise HTTPException(status_code=400, detail="Unsupported file type")
 
+        # Read file content
         file_bytes = await upload_file.read()
+        
+        # Calculate file hash
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        
+        # Check for existing file with same hash and same user (just for tracking)
+        existing_file = db.files.find_one({
+            "owner_id": ObjectId(user_id),
+            "content_hash": file_hash
+        })
+        
+        is_duplicate = existing_file is not None
 
+        # Create event folder if not exists
         event_folder = os.path.join(Config.LOCAL_STORAGE_PATH, f"event_{event_id}")
         os.makedirs(event_folder, exist_ok=True)
 
+        # Generate unique filename even for duplicates
         filename = f"{ObjectId()}_{upload_file.filename}"
         local_path = os.path.join(event_folder, filename)
+        
+        # Save file locally
         with open(local_path, "wb") as f:
             f.write(file_bytes)
 
+        # Chunking logic (unchanged)
         chunks = chunk_image_bytes(file_bytes)
         chunk_ids = []
         for index, chunk_data in enumerate(chunks):
@@ -51,6 +156,7 @@ async def handle_file_upload(upload_file: UploadFile, user_id: str, event_id: st
             })
             chunk_ids.append(chunk_id)
 
+        # Embedding extraction (unchanged)
         try:
             image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
             embeddings = extract_embeddings(image)
@@ -67,7 +173,10 @@ async def handle_file_upload(upload_file: UploadFile, user_id: str, event_id: st
         else:
             embeddings = []
 
+        # Get next file ID
         next_file_id = get_next_sequence("file_id")
+
+        # Create file document with duplicate info
         file_doc = {
             "_id": next_file_id,
             "filename": upload_file.filename,
@@ -75,21 +184,29 @@ async def handle_file_upload(upload_file: UploadFile, user_id: str, event_id: st
             "file_version": 1,
             "owner_id": ObjectId(user_id),
             "event_id": event_id,
-            "embeddings_id": None
+            "embeddings_id": None,
+            "content_hash": file_hash,
+            "is_duplicate": is_duplicate,
+            "original_file_id": existing_file["_id"] if is_duplicate else None,
+            "duplicate_upload_time": datetime.utcnow() if is_duplicate else None
         }
+
         db.files.insert_one(file_doc)
 
+        # Create embedding document
         embedding_doc = {
             "embeddings_vector": embeddings,
             "file_id": next_file_id
         }
         embedding_id = db.embeddings.insert_one(embedding_doc).inserted_id
 
+        # Update file with embedding ID
         db.files.update_one(
             {"_id": next_file_id},
             {"$set": {"embeddings_id": embedding_id}}
         )
 
+        # Update chunks with file ID
         db.chunks.update_many(
             {"_id": {"$in": chunk_ids}},
             {"$set": {"file_id": next_file_id}}
@@ -100,7 +217,8 @@ async def handle_file_upload(upload_file: UploadFile, user_id: str, event_id: st
             "file_id": str(next_file_id),
             "filename": upload_file.filename,
             "path": local_path,
-            "event_folder": event_folder,
+            "is_duplicate": is_duplicate,
+            "original_file_id": str(existing_file["_id"]) if is_duplicate else None,
             "embedding_status": "created" if embeddings else "not created"
         }
 
